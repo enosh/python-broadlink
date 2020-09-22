@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Union, Tuple, Type
 
 from .alarm import S1C
-from .climate import hysen
+from .climate import hysen, tornado
 from .cover import dooya
 from .device import device
 from .helpers import get_local_ip
@@ -88,6 +88,7 @@ def get_devices() -> Dict[int, Tuple[Type[device], str, str]]:
         0x6112: (lb1, "LB1", "Broadlink"),
         0x2722: (S1C, "S2KIT", "Broadlink"),
         0x4ead: (hysen, "HY02B05H", "Hysen"),
+        0x4e2a: (tornado, "16X SQ", "Tornado"),
         0x4e4d: (dooya, "DT360E-45/20", "Dooya"),
         0x51e3: (bg1, "BG800/BG900", "BG Electrical"),
     }

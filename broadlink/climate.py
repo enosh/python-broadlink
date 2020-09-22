@@ -201,3 +201,282 @@ class hysen(device):
             input_payload.append(int(weekend[i]['temp'] * 2))
 
         self.send_request(input_payload)
+
+class tornado(device):
+    """Controls a Tornado 16X SQ air conditioner."""
+    def __init__(self, *args, **kwargs):
+        device.__init__(self, *args, **kwargs)
+        self.type = "Tornado air conditioner"
+    
+    def _decode(self, response):
+        payload = self.decrypt(bytes(response[0x38:]))
+        return payload
+    
+    def _calculate_checksum(self, arr, target=0x20017, checksum=None):
+        """Calculate checksum of given array,
+        by adding little endian words and subtracting from target.
+        
+        Args:
+            arr (list): 
+            checksum (Optional[int]):  a received checksum, can be used to calc target
+        """
+        diff = 0
+        for i in range(len(arr)): # might need an override
+            if (i % 2 == 0):
+                try:
+                    diff += (arr[i] + (arr[i+1] << 8))
+                except:
+                    # odd array size, add little value
+                    diff += arr[i]
+        
+        if (checksum):
+            print('checksum diff is {}'.format(diff + checksum))
+
+        result = target - (diff & 0xffff)
+        return [result & 0xff, (result >> 8) & 0xff]
+
+    def _send_short_payload(self, a):
+        """Send a request for info from A/C unit and returns the response.
+        a = 0 GET_AC_INFO = "BB 00 06 80 00 00 02 00 21 01 1B 7E";
+        a = 1 GET_STATES = "BB 00 06 80 00 00 02 00 11 01 2B 7E";
+        a = 2 GET_SLEEP_INFO = "BB 00 06 80 00 00 02 00 41 01 FB 7D";
+        """
+        
+        packet = bytearray(16)
+        packet[0x00] = 0x0c
+        packet[0x02] = 0xbb
+        packet[0x04] = 0x06
+        packet[0x05] = 0x80
+        packet[0x08] = 0x02
+        packet[0x0a] = (0x11 if a == 1 else 0x21)
+        packet[0x0b] = 0x01
+        packet[0x0c] = (0x2b if a == 1 else 0x1b)
+        packet[0x0d] = (0x7e if (a == 0 or a == 1) else (0x7d if a == 2 else 0x0))
+
+        response = self.send_packet(0x6a, packet)
+        check_error(response[0x22:0x24])
+        return (self._decode(response))
+
+    def _send_short_payload_d0_07(self, payload=None):
+        """Not sure what this payload does"""
+        packet = bytearray(16)
+        packet[0x00] = 0xd0
+        packet[0x01] = 0x07
+
+        response = self.send_packet(0x6a, packet)
+        check_error(response[0x22:0x24])
+        payload = self._decode(response)
+
+        data = {}
+
+        if (payload):
+            data['payload'] = payload
+
+        return data
+
+    def get_state(self, payload=None):
+        """Returns a dictionary with the unit's parameters.
+        
+        Args:
+            payload (Optional[bool]): the received payload for debugging
+        
+        Returns:
+            dict:
+                state (bool): power
+                set_temp (float): temperature set point 16<n<32
+                mode (str): Cooling, Heating, Fan, Dry, Auto (use first letter)
+                speed (str): Mute, Low, Mid, High, Turbo (available only in cooling) (first letter and Mu for Mute)
+                swing_h (str): ON, OFF
+                swing_v (str): ON, OFF, 1, 2, 3, 4, 5 (fixed positions)
+                sleep (bool): 
+                display (bool):
+                health (bool):
+        """
+        GET_STATE_CHECKSUM_TARGET = 0x20017
+
+        payload = self._send_short_payload(1)
+        assert(len(payload) == 32)
+        data = {}
+        data['state'] = True if (payload[0x14] & 0x20) == 0x20 else False
+        data['set_temp'] = (payload[0x0c] >> 3) + 8 + (0.0 if ((payload[0xe] & 0b10000000) == 0) else 0.5)
+
+        swing_v = payload[0x0c] & 0b111
+        swing_h = (payload[0x0d] & 0b11100000) >> 5
+        if (swing_h == 0b111):
+            data['swing_h'] = 'OFF'
+        elif (swing_h == 0b111):
+            data['swing_h'] = 'OFF'
+        else:
+            data['swing_h'] = 'unrecognized value'
+        
+        if (swing_v == 0b111):
+            data['swing_v'] = 'OFF'
+        elif (swing_v == 0b000):
+            data['swing_v'] = 'ON'
+        elif (swing_v >= 0 and swing_v <=5):
+            data['swing_v'] = swing_v
+        else:
+            data['swing_v'] = 'unrecognized value'
+
+        mode = payload[0x11] >> 3 << 3
+        if mode == 0x00:
+            data['mode'] = 'A'
+        elif mode == 0x20:
+            data['mode'] = 'C'
+        elif mode == 0x40:
+            data['mode'] = 'D'
+        elif mode == 0x80:
+            data['mode'] = 'H'
+        elif mode == 0xc0:
+            data['mode'] = 'F'
+        else:
+            data['mode'] = 'unrecognized value'
+
+        speed_L = payload[0x0f]
+        speed_R = payload[0x10] 
+        if speed_L == 0x60 and speed_R == 0x00:
+            data['speed'] = 'L'
+        elif speed_L == 0x40 and speed_R == 0x00:
+            data['speed'] = 'M'
+        elif speed_L == 0x20 and speed_R == 0x00:
+            data['speed'] = 'H'
+        elif speed_L == 0x40 and speed_R == 0x80:
+            data['speed'] = 'Mu'
+        elif speed_R == 0x40:
+            data['speed'] = 'T'
+        elif speed_L == 0xa0 and speed_R == 0x00:
+            data['speed'] = 'A'
+        else:
+            data['speed'] = 'unrecognized value'
+
+        data['sleep'] = True if (payload[0x1a] & 0b100 == 0b000) else False
+        data['display'] = (payload[0x16] & 0x10 == 0x10)
+        data['health'] = (payload[0x14] & 0b11 == 0b11)
+
+        checksum = self._calculate_checksum(payload[:0x19], GET_STATE_CHECKSUM_TARGET) # checksum=(payload[0x1a] << 8) + payload[0x19]
+
+        if (payload[0x19] == checksum[0] and payload[0x1a] == checksum[1]):
+            pass # success
+        else:
+            print('checksum fail', ['{:02x}'.format(x) for x in checksum])
+
+        if (payload):
+            data['payload'] = payload
+
+        return data
+
+    def get_ac_info(self, payload=None):
+        """Returns dictionary with A/C info...
+        Not implemented yet, except power state.
+        """
+        payload = self._send_short_payload(0)
+
+        # first 13 bytes are the same: 22 00 bb 00 07 00 00 00 18 00 01 21 c0
+        data = {}
+        data['state'] = True if (payload[0x0d] & 0b1 == 0b1) else False
+
+        if (payload):
+            data['payload'] = payload
+
+        return data
+
+    def set_advanced(self, state=None, mode=None, set_temp=None, speed=None, swing_v=None, swing_h=None, sleep=None, display=None, health=None):
+        """Set paramaters of unit and return response.
+        If not all parameters are specificed, will try to derive from the unit's current state. Doesn't work when powered down.
+        Args:
+            state (bool): power
+            set_temp (float): temperature set point 16<n<32
+            mode (str): Cooling, Heating, Fan, Dry, Auto (use first letter)
+            speed (str): Mute, Low, Mid, High, Turbo (available only in cooling) (use first letter and Mu for Mute)
+            swing_h (str): ON, OFF
+            swing_v (str): ON, OFF, 1, 2, 3, 4, 5 (fixed positions)
+            sleep (bool): 
+            display (bool):
+            health (bool):
+        """
+
+        args = locals()
+        args.pop('self')
+        received_state = self.get_state()
+        for k, v in args.items():
+            if v == None:
+                args[k] = received_state[k]
+        
+        SET_STATE_CHECKSUM_TARGET = 0x20017
+        
+        PREFIX = [0x19, 0x00, 0xbb, 0x00, 0x06, 0x80, 0x00, 0x00, 0x0f, 0x00, 0x01, 0x01] # 12B
+        MIDDLE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] # 13B + 2B checksum
+        SUFFIX = [0, 0, 0, 0, 0] # 5B
+        payload = PREFIX + MIDDLE + SUFFIX
+
+        assert ((args['set_temp'] >= 16) and (args['set_temp'] <= 32) and ((args['set_temp'] * 2) % 1 == 0))
+
+        if (args['swing_H'] == 'OFF'):
+            swing_h = 0b111
+        elif (args['swing_H'] == 'ON'):
+            swing_h = 0b000
+        else:
+            raise('unrecognized swing horizontal value {}'.format(args['swing_H']))
+
+        if (args['swing_V'] == 'OFF'):
+            swing_h = 0b111
+        elif (args['swing_V'] == 'ON'):
+            swing_h = 0b000
+        elif (args['swing_V'] >= 0 and args['swing_V'] <= 5):
+            swing_v = args['swing_V']
+        else:
+            raise('unrecognized swing vertical value {}'.format(args['swing_H']))
+
+        if (speed == 'L'):
+            speed_L, speed_R = 0x60, 0x00
+        elif (speed == 'M'):
+            speed_L, speed_R = 0x40, 0x00
+        elif (speed  == 'H'):
+            speed_L, speed_R = 0x20, 0x00
+        elif (speed == 'Mu'):
+            speed_L, speed_R = 0x40, 0x80
+            assert (mode == 'F')
+        elif (speed == 'T'):
+            speed_R = 0x40
+            speed_L = 0x20 # doesn't matter
+        elif (speed == 'A'):
+            speed_L, speed_R = 0xa0, 0x00
+        else:
+            raise ValueError('unrecognized speed value: {}'.format(speed))
+
+        if (args['mode'] == 'A'):
+            mode_1 = 0x00
+        elif (args['mode'] == 'C'):
+            mode_1 = 0x20
+        elif (args['mode'] == 'D'):
+            mode_1 = 0x40
+        elif (args['mode'] == 'H'):
+            mode_1 = 0x80
+        elif (args['mode'] == 'F'):
+            mode_1 = 0xc0
+        else:
+            raise ValueError('unrecognized mode value: {}'.format(mode))
+
+        payload[0x0c] = ((int(args['set_temp']) - 8 << 3) | swing_h)
+        payload[0x0d] = (swing_v << 5 | 0b100)
+        payload[0x0e] = (0b10000000 if (args['set_temp'] % 1 == 0.5) else 0b0) | 0x2d
+        payload[0x0f] = speed_L
+        payload[0x10] = speed_R
+        payload[0x11] = mode_1 | (0b100 if sleep else 0x0)
+        # payload[0x12] = always 0x00
+        # payload[0x13] = always 0x00
+        payload[0x14] = (0b11 if args['health'] else 0b00) | (0b100000 if args['state'] else 0b000000)
+        # payload[0x15] = always 0x00
+        payload[0x16] = 0b10000 if args['display'] else 0b00000 # 0b_00 also changes
+        # payload[0x17] = always 0x00
+        payload[0x18] = 0b101 # either 0x00 or 0x05 - unclear on what it does
+        
+        # 0x19-0x1a - checksum
+        checksum = self._calculate_checksum(payload[:0x19], SET_STATE_CHECKSUM_TARGET) # checksum=(payload[0x1a] << 8) + payload[0x19]
+        payload[0x19] = checksum[0]
+        payload[0x1a] = checksum[1]
+
+        response = self.send_packet(0x6a, bytearray(payload))
+        check_error(response[0x22:0x24])
+        response_payload = self._decode(response)
+        return response_payload
