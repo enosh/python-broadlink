@@ -208,77 +208,47 @@ class tornado(device):
         device.__init__(self, *args, **kwargs)
         self.type = "Tornado air conditioner"
     
-    def _decode(self, response):
+    def _decode(self, response) -> bytes:
         payload = self.decrypt(bytes(response[0x38:]))
         return payload
     
-    def _calculate_checksum(self, arr, target=0x20017, checksum=None):
+    def _calculate_checksum(self, packet:list, target:int=0x20017) -> tuple(int, int):
         """Calculate checksum of given array,
         by adding little endian words and subtracting from target.
         
         Args:
-            arr (list): 
-            checksum (Optional[int]):  a received checksum, can be used to calc target
+            packet (list/bytearray/bytes): 
         """
-        diff = 0
-        for i in range(len(arr)): # might need an override
-            if (i % 2 == 0):
-                try:
-                    diff += (arr[i] + (arr[i+1] << 8))
-                except:
-                    # odd array size, add little value
-                    diff += arr[i]
-        
-        if (checksum):
-            print('checksum diff is {}'.format(diff + checksum))
+        result = target - (sum([v if i % 2 == 0 else v << 8 for i, v in enumerate(packet)]) & 0xffff)
+        return (result & 0xff, (result >> 8) & 0xff)
 
-        result = target - (diff & 0xffff)
-        return [result & 0xff, (result >> 8) & 0xff]
-
-    def _send_short_payload(self, a):
+    def _send_short_payload(self, payload:int) -> bytes:
         """Send a request for info from A/C unit and returns the response.
-        a = 0 GET_AC_INFO = "BB 00 06 80 00 00 02 00 21 01 1B 7E";
-        a = 1 GET_STATES = "BB 00 06 80 00 00 02 00 11 01 2B 7E";
-        a = 2 GET_SLEEP_INFO = "BB 00 06 80 00 00 02 00 41 01 FB 7D";
+        0 = GET_AC_INFO, 1 = GET_STATES, 2 = GET_SLEEP_INFO, 3 = unknown function
         """
         
-        packet = bytearray(16)
-        packet[0x00] = 0x0c
-        packet[0x02] = 0xbb
-        packet[0x04] = 0x06
-        packet[0x05] = 0x80
-        packet[0x08] = 0x02
-        packet[0x0a] = (0x11 if a == 1 else 0x21)
-        packet[0x0b] = 0x01
-        packet[0x0c] = (0x2b if a == 1 else 0x1b)
-        packet[0x0d] = (0x7e if (a == 0 or a == 1) else (0x7d if a == 2 else 0x0))
+        if (payload == 0):
+            packet = bytearray([0x0c, 0x00, 0xbb, 0x00, 0x06, 0x80, 0x00, 0x00, 0x02, 0x00, 0x21, 0x01, 0x1b, 0x7e])
+        elif (payload == 1):
+            packet = bytearray([0x0c, 0x00, 0xbb, 0x00, 0x06, 0x80, 0x00, 0x00, 0x02, 0x00, 0x11, 0x01, 0x2b, 0x7e])
+        elif (payload == 2):
+            packet = bytearray([0x0c, 0x00, 0xbb, 0x00, 0x06, 0x80, 0x00, 0x00, 0x02, 0x00, 0x41, 0x01, 0xfb, 0x7d])
+        elif (payload == 3):
+            packet = bytearray(16)
+            packet[0x00] = 0xd0
+            packet[0x01] = 0x07
+        else:
+            pass
 
         response = self.send_packet(0x6a, packet)
         check_error(response[0x22:0x24])
         return (self._decode(response))
 
-    def _send_short_payload_d0_07(self, payload=None):
-        """Not sure what this payload does"""
-        packet = bytearray(16)
-        packet[0x00] = 0xd0
-        packet[0x01] = 0x07
-
-        response = self.send_packet(0x6a, packet)
-        check_error(response[0x22:0x24])
-        payload = self._decode(response)
-
-        data = {}
-
-        if (payload):
-            data['payload'] = payload
-
-        return data
-
-    def get_state(self, payload=None):
+    def get_state(self, payload:bool=None) -> dict:
         """Returns a dictionary with the unit's parameters.
         
         Args:
-            payload (Optional[bool]): the received payload for debugging
+            payload (Optional[bool]): add the received payload for debugging
         
         Returns:
             dict:
@@ -292,8 +262,6 @@ class tornado(device):
                 display (bool):
                 health (bool):
         """
-        GET_STATE_CHECKSUM_TARGET = 0x20017
-
         payload = self._send_short_payload(1)
         assert(len(payload) == 32)
         data = {}
@@ -314,7 +282,7 @@ class tornado(device):
         elif (swing_v == 0b000):
             data['swing_v'] = 'ON'
         elif (swing_v >= 0 and swing_v <=5):
-            data['swing_v'] = swing_v
+            data['swing_v'] = str(swing_v)
         else:
             data['swing_v'] = 'unrecognized value'
 
@@ -353,7 +321,7 @@ class tornado(device):
         data['display'] = (payload[0x16] & 0x10 == 0x10)
         data['health'] = (payload[0x14] & 0b11 == 0b11)
 
-        checksum = self._calculate_checksum(payload[:0x19], GET_STATE_CHECKSUM_TARGET) # checksum=(payload[0x1a] << 8) + payload[0x19]
+        checksum = self._calculate_checksum(payload[:0x19]) # checksum=(payload[0x1a] << 8) + payload[0x19]
 
         if (payload[0x19] == checksum[0] and payload[0x1a] == checksum[1]):
             pass # success
@@ -361,13 +329,16 @@ class tornado(device):
             print('checksum fail', ['{:02x}'.format(x) for x in checksum])
 
         if (payload):
-            data['payload'] = payload
+            data['received_payload'] = payload
 
         return data
 
-    def get_ac_info(self, payload=None):
+    def get_ac_info(self, payload:bool=None) -> dict:
         """Returns dictionary with A/C info...
         Not implemented yet, except power state.
+
+        Args:
+            payload (Optional[bool]): add the received payload for debugging
         """
         payload = self._send_short_payload(0)
 
@@ -376,11 +347,12 @@ class tornado(device):
         data['state'] = True if (payload[0x0d] & 0b1 == 0b1) else False
 
         if (payload):
-            data['payload'] = payload
+            data['received_payload'] = payload
 
         return data
 
-    def set_advanced(self, state=None, mode=None, set_temp=None, speed=None, swing_v=None, swing_h=None, sleep=None, display=None, health=None):
+    def set_advanced(self, state:bool=None, mode:str=None, set_temp:float=None, speed:str=None, swing_v:str=None, swing_h:str=None,
+                        sleep:bool=None, display:bool=None, health:bool=None) -> bytes:
         """Set paramaters of unit and return response.
         If not all parameters are specificed, will try to derive from the unit's current state. Doesn't work when powered down.
         Args:
@@ -402,8 +374,6 @@ class tornado(device):
             if v == None:
                 args[k] = received_state[k]
         
-        SET_STATE_CHECKSUM_TARGET = 0x20017
-        
         PREFIX = [0x19, 0x00, 0xbb, 0x00, 0x06, 0x80, 0x00, 0x00, 0x0f, 0x00, 0x01, 0x01] # 12B
         MIDDLE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] # 13B + 2B checksum
         SUFFIX = [0, 0, 0, 0, 0] # 5B
@@ -416,16 +386,16 @@ class tornado(device):
         elif (args['swing_H'] == 'ON'):
             swing_h = 0b000
         else:
-            raise('unrecognized swing horizontal value {}'.format(args['swing_H']))
+            raise ValueError('unrecognized swing horizontal value {}'.format(args['swing_H']))
 
         if (args['swing_V'] == 'OFF'):
             swing_h = 0b111
         elif (args['swing_V'] == 'ON'):
             swing_h = 0b000
         elif (args['swing_V'] >= 0 and args['swing_V'] <= 5):
-            swing_v = args['swing_V']
+            swing_v = str(args['swing_V'])
         else:
-            raise('unrecognized swing vertical value {}'.format(args['swing_H']))
+            raise ValueError('unrecognized swing vertical value {}'.format(args['swing_H']))
 
         if (speed == 'L'):
             speed_L, speed_R = 0x60, 0x00
@@ -472,7 +442,7 @@ class tornado(device):
         payload[0x18] = 0b101 # either 0x00 or 0x05 - unclear on what it does
         
         # 0x19-0x1a - checksum
-        checksum = self._calculate_checksum(payload[:0x19], SET_STATE_CHECKSUM_TARGET) # checksum=(payload[0x1a] << 8) + payload[0x19]
+        checksum = self._calculate_checksum(payload[:0x19]) # checksum=(payload[0x1a] << 8) + payload[0x19]
         payload[0x19] = checksum[0]
         payload[0x1a] = checksum[1]
 
