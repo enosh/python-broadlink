@@ -212,7 +212,7 @@ class tornado(device):
         payload = self.decrypt(bytes(response[0x38:]))
         return payload
     
-    def _calculate_checksum(self, packet:list, target:int=0x20017) -> tuple(int, int):
+    def _calculate_checksum(self, packet:list, target:int=0x20017) -> tuple:
         """Calculate checksum of given array,
         by adding little endian words and subtracting from target.
         
@@ -381,35 +381,35 @@ class tornado(device):
 
         assert ((args['set_temp'] >= 16) and (args['set_temp'] <= 32) and ((args['set_temp'] * 2) % 1 == 0))
 
-        if (args['swing_H'] == 'OFF'):
-            swing_h = 0b111
-        elif (args['swing_H'] == 'ON'):
-            swing_h = 0b000
+        if (args['swing_h'] == 'OFF'):
+            swing_L = 0b111
+        elif (args['swing_h'] == 'ON'):
+            swing_L = 0b000
         else:
-            raise ValueError('unrecognized swing horizontal value {}'.format(args['swing_H']))
+            raise ValueError('unrecognized swing horizontal value {}'.format(args['swing_h']))
 
-        if (args['swing_V'] == 'OFF'):
-            swing_h = 0b111
-        elif (args['swing_V'] == 'ON'):
-            swing_h = 0b000
-        elif (args['swing_V'] >= 0 and args['swing_V'] <= 5):
-            swing_v = str(args['swing_V'])
+        if (args['swing_v'] == 'OFF'):
+            swing_R = 0b111
+        elif (args['swing_v'] == 'ON'):
+            swing_R = 0b000
+        elif (args['swing_v'] >= 0 and args['swing_v'] <= 5):
+            swing_R = str(args['swing_v'])
         else:
-            raise ValueError('unrecognized swing vertical value {}'.format(args['swing_H']))
+            raise ValueError('unrecognized swing vertical value {}'.format(args['swing_h']))
 
-        if (speed == 'L'):
+        if (args['speed'] == 'L'):
             speed_L, speed_R = 0x60, 0x00
-        elif (speed == 'M'):
+        elif (args['speed'] == 'M'):
             speed_L, speed_R = 0x40, 0x00
-        elif (speed  == 'H'):
+        elif (args['speed']  == 'H'):
             speed_L, speed_R = 0x20, 0x00
-        elif (speed == 'Mu'):
+        elif (args['speed'] == 'Mu'):
             speed_L, speed_R = 0x40, 0x80
             assert (mode == 'F')
-        elif (speed == 'T'):
+        elif (args['speed'] == 'T'):
             speed_R = 0x40
             speed_L = 0x20 # doesn't matter
-        elif (speed == 'A'):
+        elif (args['speed'] == 'A'):
             speed_L, speed_R = 0xa0, 0x00
         else:
             raise ValueError('unrecognized speed value: {}'.format(speed))
@@ -427,8 +427,8 @@ class tornado(device):
         else:
             raise ValueError('unrecognized mode value: {}'.format(mode))
 
-        payload[0x0c] = ((int(args['set_temp']) - 8 << 3) | swing_h)
-        payload[0x0d] = (swing_v << 5 | 0b100)
+        payload[0x0c] = ((int(args['set_temp']) - 8 << 3) | swing_L)
+        payload[0x0d] = (int(swing_R) << 5 | 0b100)
         payload[0x0e] = (0b10000000 if (args['set_temp'] % 1 == 0.5) else 0b0) | 0x2d
         payload[0x0f] = speed_L
         payload[0x10] = speed_R
