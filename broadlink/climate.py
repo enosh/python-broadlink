@@ -357,6 +357,12 @@ class tornado(device):
 
         return data
 
+    def set_power(self, state):
+        self.set_advanced(state=state)
+    
+    def check_power(self):
+        return self.get_ac_info()['state']
+
     def set_advanced(self,
         state: bool = None,
         mode: str = None,
