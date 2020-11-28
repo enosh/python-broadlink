@@ -1,3 +1,4 @@
+"""Support for universal remotes."""
 from .device import device
 from .exceptions import check_error
 
@@ -16,45 +17,45 @@ class rm(device):
         """Return the last captured code."""
         packet = bytearray(self._request_header)
         packet.append(0x04)
-        response = self.send_packet(0x6a, packet)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
         payload = self.decrypt(response[0x38:])
-        return payload[len(self._request_header) + 4:]
+        return payload[len(self._request_header) + 4 :]
 
     def send_data(self, data: bytes) -> None:
         """Send a code to the device."""
         packet = bytearray(self._code_sending_header)
         packet += bytearray([0x02, 0x00, 0x00, 0x00])
         packet += data
-        response = self.send_packet(0x6a, packet)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
 
     def enter_learning(self) -> None:
         """Enter infrared learning mode."""
         packet = bytearray(self._request_header)
         packet.append(0x03)
-        response = self.send_packet(0x6a, packet)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
 
     def sweep_frequency(self) -> None:
         """Sweep frequency."""
         packet = bytearray(self._request_header)
         packet.append(0x19)
-        response = self.send_packet(0x6a, packet)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
 
     def cancel_sweep_frequency(self) -> None:
         """Cancel sweep frequency."""
         packet = bytearray(self._request_header)
-        packet.append(0x1e)
-        response = self.send_packet(0x6a, packet)
+        packet.append(0x1E)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
 
     def check_frequency(self) -> bool:
         """Return True if the frequency was identified successfully."""
         packet = bytearray(self._request_header)
-        packet.append(0x1a)
-        response = self.send_packet(0x6a, packet)
+        packet.append(0x1A)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
         payload = self.decrypt(response[0x38:])
         if payload[len(self._request_header) + 4] == 1:
@@ -64,8 +65,8 @@ class rm(device):
     def find_rf_packet(self) -> bool:
         """Enter radiofrequency learning mode."""
         packet = bytearray(self._request_header)
-        packet.append(0x1b)
-        response = self.send_packet(0x6a, packet)
+        packet.append(0x1B)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
         payload = self.decrypt(response[0x38:])
         if payload[len(self._request_header) + 4] == 1:
@@ -76,10 +77,10 @@ class rm(device):
         """Return the state of the sensors in raw format."""
         packet = bytearray(self._request_header)
         packet.append(command)
-        response = self.send_packet(0x6a, packet)
+        response = self.send_packet(0x6A, packet)
         check_error(response[0x22:0x24])
         payload = self.decrypt(response[0x38:])
-        return bytearray(payload[len(self._request_header) + 4:])
+        return bytearray(payload[len(self._request_header) + 4 :])
 
     def check_temperature(self) -> int:
         """Return the temperature."""
@@ -89,7 +90,7 @@ class rm(device):
     def check_sensors(self) -> dict:
         """Return the state of the sensors."""
         data = self._check_sensors(0x1)
-        return {'temperature': data[0x0] + data[0x1] / 10.0}
+        return {"temperature": data[0x0] + data[0x1] / 10.0}
 
 
 class rm4(rm):
@@ -99,8 +100,8 @@ class rm4(rm):
         """Initialize the controller."""
         device.__init__(self, *args, **kwargs)
         self.type = "RM4"
-        self._request_header = b'\x04\x00'
-        self._code_sending_header = b'\xda\x00'
+        self._request_header = b"\x04\x00"
+        self._code_sending_header = b"\xda\x00"
 
     def check_temperature(self) -> int:
         """Return the temperature."""
@@ -116,18 +117,6 @@ class rm4(rm):
         """Return the state of the sensors."""
         data = self._check_sensors(0x24)
         return {
-            'temperature': data[0x0] + data[0x1] / 100.0,
-            'humidity': data[0x2] + data[0x3] / 100.0
+            "temperature": data[0x0] + data[0x1] / 100.0,
+            "humidity": data[0x2] + data[0x3] / 100.0,
         }
-
-
-# For legacy compatibility - don't use this
-class rm2(rm):
-    def __init__(self):
-        device.__init__(self, None, None, None)
-
-    def discover(self):
-        dev = discover()
-        self.host = dev.host
-        self.mac = dev.mac
-
