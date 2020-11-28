@@ -559,3 +559,10 @@ class tornado(device):
                 args['checksum_lbit'] = 0
         
         return self.set_advanced(**args)
+
+    def set_power(self, state: bool) -> None:
+        self.set_partial(state=state)
+    
+    def check_power(self) -> bool:
+        info = self.get_ac_info()
+        return info['state']
