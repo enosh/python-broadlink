@@ -302,7 +302,7 @@ class hvac(device):
     def _encode(self, data: bytes) -> bytes:
         """Encode data for transport."""
         packet = bytearray(10)
-        p_len = 8 + len(data)
+        p_len = 10 + len(data)
         struct.pack_into("<HHHHH", packet, 0, p_len, 0x00BB, 0x8006, 0, len(data))
         packet += data
         packet += self._crc(packet[2:]).to_bytes(2, "little")
@@ -353,15 +353,12 @@ class hvac(device):
         """
         resp = self._send(0x1)
 
-        if (len(resp) != 0xF):
-            raise ValueError(f"unexpected resp size: {len(resp)}")
-
-        logging.debug("Received resp:\n%s", resp.hex(' '))
-        logging.debug("0b[R] mask: %x, 0c[R] mask: %x, cmnd_16: %x",
-                      resp[0x3] & 0xF, resp[0x4] & 0xF, resp[0x4])
+        logging.debug("Received response:\n%s", resp.hex(' '))
+        if (len(resp) != 0xD):
+            raise ValueError(f"unexpected response size: {len(resp)} != 13")
 
         state = {}
-        state['power'] = resp[0x8] & 1 << 5
+        state['power'] = bool(resp[0x8] & 1 << 5)
         state['target_temp'] = 8 + (resp[0x0] >> 3) + (resp[0x4] >> 7) * 0.5
         state['swing_v'] = self.SwVert(resp[0x0] & 0b111)
         state['swing_h'] = self.SwHoriz(resp[0x1] >> 5)
@@ -369,6 +366,7 @@ class hvac(device):
         state['speed'] = self.Speed(resp[0x3] >> 5)
         state['preset'] = self.Preset(resp[0x4] >> 6)
         state['sleep'] = bool(resp[0x5] & 1 << 2)
+        state['ifeel'] = bool(resp[0x5] & 1 << 3)
         state['health'] = bool(resp[0x8] & 1 << 1)
         state['clean'] = bool(resp[0x8] & 1 << 2)
         state['display'] = bool(resp[0xA] & 1 << 4)
@@ -387,10 +385,10 @@ class hvac(device):
                 ambient_temp (float): ambient temperature
         """
         resp = self._send(2)
-        if (len(resp) != 0x18):
-            raise ValueError(f"unexpected resp size: {len(resp)}")
 
         logging.debug("Received resp:\n%s", resp.hex(' '))
+        if (len(resp) != 0x16):
+            raise ValueError(f"unexpected response size: {len(resp)}")
 
         ac_info = {}
         ac_info["power"] = resp[0x1] & 1
@@ -413,6 +411,7 @@ class hvac(device):
         swing_v: int,  # hvac.SwVert
         sleep: bool,
         display: bool,
+        ifeel: bool,
         health: bool,
         clean: bool,
         mildew: bool,
@@ -443,7 +442,7 @@ class hvac(device):
         data[0x2] = ((target_temp % 1 == 0.5) << 7) | UNK1
         data[0x3] = speed << 5
         data[0x4] = preset << 6
-        data[0x5] = mode << 5 | (sleep << 2)
+        data[0x5] = mode << 5 | (sleep << 2) | (ifeel << 3)
         data[0x8] = (power << 5 | clean << 2 | health * 0b11)
         data[0xA] = display << 4 | mildew << 3
         data[0xC] = UNK2
