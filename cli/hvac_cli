@@ -17,6 +17,7 @@ parser.add_argument("--ttemp", help="target temp", default=None, type=int)
 parser.add_argument("--mode", help="mode, HEAT, COOL, AUTO DRY", default=None)
 parser.add_argument("--display", help="ON/OFF", default=None)
 parser.add_argument("-state", help="Dispaly current state", default=None, action='store_true')
+parser.add_argument("-info", help="Get ac info", default=None, action='store_true')
 
 
 
@@ -34,6 +35,10 @@ state = dev.get_state()
 if args.state:
     print('== State ==')
     pprint(state)
+if args.info:
+    print('== Info ==')
+    info = dev.get_ac_info()
+    pprint(info)
 old_state = state.copy()
 if args.on:
     state['power'] = True
@@ -45,7 +50,7 @@ if args.mode:
     state['mode'] = args.mode
 if args.display:    
     state['display'] = True if args.display == 'OFF' else False
-    
+
 if state != old_state:
     dev.set_state(**state)
 
