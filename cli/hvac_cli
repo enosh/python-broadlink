@@ -13,7 +13,7 @@ parser.add_argument("--host", help="host address", required=True)
 parser.add_argument("--mac", help="mac address (hex reverse), as used by python-broadlink library", required=True)
 parser.add_argument("-on", help="power on", default=None, action='store_true')
 parser.add_argument("-off", help="power off", default=None, action='store_true')
-parser.add_argument("--ttemp", help="target temp", default=None, type=int)
+parser.add_argument("--temp", help="target temp", default=None, type=int)
 parser.add_argument("--mode", help="mode, HEAT, COOL, AUTO DRY", default=None)
 parser.add_argument("--display", help="ON/OFF", default=None)
 parser.add_argument("-state", help="Dispaly current state", default=None, action='store_true')
@@ -44,10 +44,10 @@ if args.on:
     state['power'] = True
 if args.off:
     state['power'] = False
-if args.ttemp:
-    state['target_temp'] = args.ttemp
+if args.temp:
+    state['target_temp'] = args.temp
 if args.mode:
-    state['mode'] = args.mode
+    state['mode'] = next(value for name, value in vars(dev.Mode).items() if name == args.mode)
 if args.display:    
     state['display'] = True if args.display == 'OFF' else False
 
