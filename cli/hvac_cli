@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+import argparse
+
+import broadlink
+from broadlink.climate import hvac
+
+
+
+def auto_int(x):
+    return int(x, 0)
+
+
+parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+parser.add_argument("--type", type=auto_int, default=0x2712, help="type of device", required=True)
+parser.add_argument("--host", help="host address", required=True)
+parser.add_argument("--mac", help="mac address (hex reverse), as used by python-broadlink library", required=True)
+parser.add_argument("-on", help="power on", default=None, action='store_true')
+parser.add_argument("-off", help="power off", default=None, action='store_true')
+parser.add_argument("--ttemp", help="target temp", default=None)
+parser.add_argument("--mode", help="mode, HEAT, COOL, AUTO DRY", default=None)
+
+
+
+args = parser.parse_args()
+
+
+type = args.type
+host = args.host
+mac = bytearray.fromhex(args.mac)
+
+dev: hvac = broadlink.gendevice(type, (host, 80), mac)
+dev.auth()
+state = dev.get_state()
+
+if args.on:
+    state['power'] = True
+if args.off:
+    state['power'] = False
+if args.ttemp:
+    state['target_temp'] = args.ttemp
+dev.set_state(**state)
+
