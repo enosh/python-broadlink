@@ -6,7 +6,7 @@ import typing as t
 from . import exceptions as e
 from .const import DEFAULT_BCAST_ADDR, DEFAULT_PORT, DEFAULT_TIMEOUT
 from .alarm import S1C
-from .climate import hysen
+from .climate import hysen, hvac
 from .cover import dooya
 from .device import Device, ping, scan
 from .hub import s3
@@ -174,6 +174,9 @@ SUPPORTED_TYPES = {
     },
     hysen: {
         0x4EAD: ("HY02/HY03", "Hysen"),
+    },
+    hvac: {
+        0x4E2A: ("HVAC", "Licensed manufacturer")
     },
     dooya: {
         0x4E4D: ("DT360E-45/20", "Dooya"),
